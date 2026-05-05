@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
 from models.templates import dashboard_template, html_template
@@ -13,6 +14,15 @@ app = FastAPI(
     version=settings.app_version,
     description="FastAPI REST API for CodeChef profile data.",
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, you might want to restrict this to your frontend domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(profile_router)
 app.include_router(heatmap_router)
 app.include_router(rating_router)
