@@ -232,7 +232,7 @@ html_template = """
         <div class="top-links">
             <a href="/dashboard">Dashboard</a>
             <a href="/profile/tourist">Profile Example</a>
-            <a href="/heatmap/tourist">Heatmap Example</a>
+            <a href="/heatmap/tourist?view=last_365">Heatmap Example</a>
             <a href="/rating/tourist">Rating Example</a>
         </div>
 
@@ -272,15 +272,22 @@ html_template = """
             <div class="endpoint-content">
                 <p>Returns daily submission heatmap entries for the user.</p>
                 <div class="parameter"><code>handle</code> Required CodeChef username.</div>
+                <div class="parameter"><code>view</code> Optional. Use <code>all</code>, <code>last_365</code>, or <code>year</code>.</div>
+                <div class="parameter"><code>year</code> Optional. Required when <code>view=year</code>.</div>
                 <pre><code>{
   "success": true,
   "status": 200,
   "handle": "tourist",
+  "view": "last_365",
+  "year": null,
+  "availableYears": [2026, 2025, 2024],
+  "firstActiveDate": "2024-01-01",
+  "lastActiveDate": "2026-01-12",
   "heatMap": [
     {"date": "2024-01-01", "value": 2}
   ]
 }</code></pre>
-                <a class="try-button" href="/heatmap/tourist">Try endpoint</a>
+                <a class="try-button" href="/heatmap/tourist?view=last_365">Try endpoint</a>
             </div>
         </div>
 
@@ -476,7 +483,8 @@ dashboard_template = """
             gap: 12px;
         }
 
-        input {
+        input,
+        select {
             width: 100%;
             padding: 14px 16px;
             border-radius: 14px;
@@ -487,7 +495,8 @@ dashboard_template = """
             outline: none;
         }
 
-        input:focus {
+        input:focus,
+        select:focus {
             border-color: var(--accent);
             box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12);
         }
@@ -645,7 +654,8 @@ dashboard_template = """
                 <h1>Inspect every API response for a CodeChef handle.</h1>
                 <p>
                     Enter a handle and this page will fetch the profile, heatmap, and rating history endpoints
-                    and render the raw JSON side by side.
+                    and render the raw JSON side by side. Heatmap supports full history, trailing 365 days,
+                    or a specific calendar year.
                 </p>
 
                 <div class="stats">
@@ -658,8 +668,8 @@ dashboard_template = """
                         <span>shared handle input</span>
                     </div>
                     <div class="stat">
-                        <strong>JSON</strong>
-                        <span>rendered live</span>
+                        <strong>365+</strong>
+                        <span>heatmap date views</span>
                     </div>
                 </div>
             </div>
@@ -670,6 +680,18 @@ dashboard_template = """
                     <div class="controls">
                         <input id="handle-input" type="text" placeholder="one_deepak" value="one_deepak" autocomplete="off" />
                         <button id="load-button" type="button">Load</button>
+                    </div>
+                </div>
+
+                <div class="input-wrap" style="margin-top: 16px;">
+                    <label for="heatmap-view-input">Heatmap View</label>
+                    <div class="controls">
+                        <select id="heatmap-view-input">
+                            <option value="all">All activity</option>
+                            <option value="last_365" selected>Last 365 days</option>
+                            <option value="year">Specific year</option>
+                        </select>
+                        <input id="heatmap-year-input" type="number" min="2009" step="1" placeholder="2025" />
                     </div>
                 </div>
 
@@ -715,6 +737,8 @@ dashboard_template = """
 
     <script>
         const handleInput = document.getElementById("handle-input");
+        const heatmapViewInput = document.getElementById("heatmap-view-input");
+        const heatmapYearInput = document.getElementById("heatmap-year-input");
         const loadButton = document.getElementById("load-button");
         const statusNode = document.getElementById("status");
 
@@ -725,7 +749,22 @@ dashboard_template = """
                 badge: document.getElementById("profile-badge"),
             },
             heatmap: {
-                path: (handle) => `/heatmap/${encodeURIComponent(handle)}`,
+                path: (handle) => {
+                    const params = new URLSearchParams();
+                    const selectedView = heatmapViewInput.value;
+                    const selectedYear = heatmapYearInput.value.trim();
+
+                    if (selectedView !== "all") {
+                        params.set("view", selectedView);
+                    }
+
+                    if (selectedView === "year" && selectedYear) {
+                        params.set("year", selectedYear);
+                    }
+
+                    const query = params.toString();
+                    return `/heatmap/${encodeURIComponent(handle)}${query ? `?${query}` : ""}`;
+                },
                 output: document.getElementById("heatmap-output"),
                 badge: document.getElementById("heatmap-badge"),
             },
@@ -768,6 +807,12 @@ dashboard_template = """
                 return;
             }
 
+            if (heatmapViewInput.value === "year" && !heatmapYearInput.value.trim()) {
+                statusNode.textContent = "Enter a year when heatmap view is set to specific year.";
+                statusNode.className = "status error";
+                return;
+            }
+
             loadButton.disabled = true;
             statusNode.textContent = `Fetching API responses for ${trimmed}...`;
             statusNode.className = "status";
@@ -799,6 +844,12 @@ dashboard_template = """
                 loadDashboard(button.dataset.handle);
             });
         });
+
+        heatmapViewInput.addEventListener("change", () => {
+            heatmapYearInput.disabled = heatmapViewInput.value !== "year";
+        });
+
+        heatmapYearInput.disabled = true;
 
         loadDashboard(handleInput.value);
     </script>

@@ -9,5 +9,9 @@ router = APIRouter(tags=["heatmap"], dependencies=[Depends(enforce_rate_limit)])
 
 
 @router.get("/heatmap/{handle}", response_model=CodeChefHeatmapResponse)
-async def get_heatmap(handle: str) -> CodeChefHeatmapResponse:
-    return await fetch_heatmap(handle)
+async def get_heatmap(
+    handle: str,
+    view: str = "all",
+    year: int | None = None,
+) -> CodeChefHeatmapResponse:
+    return await fetch_heatmap(handle, view=view, year=year)

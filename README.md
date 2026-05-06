@@ -47,6 +47,14 @@ GET /
 GET /heatmap/{handle}
 ```
 
+Heatmap query options:
+
+```http
+GET /heatmap/{handle}?view=last_365
+GET /heatmap/{handle}?view=year&year=2025
+GET /heatmap/{handle}?view=all
+```
+
 ```http
 GET /rating/{handle}
 ```
