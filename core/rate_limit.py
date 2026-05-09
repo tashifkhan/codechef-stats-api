@@ -1,55 +1,57 @@
-from collections import defaultdict, deque
-from math import ceil
-from threading import Lock
-from time import monotonic
+import time
+from dataclasses import dataclass
 
-from fastapi import HTTPException, Request
-
+from core.cache import get_redis
 from core.config import settings
 
 
-class InMemoryRateLimiter:
-    def __init__(self, limit: int, window_seconds: int) -> None:
-        self.limit = limit
-        self.window_seconds = window_seconds
-        self._requests: dict[str, deque[float]] = defaultdict(deque)
-        self._lock = Lock()
-
-    def check(self, key: str) -> int | None:
-        now = monotonic()
-
-        with self._lock:
-            timestamps = self._requests[key]
-            window_start = now - self.window_seconds
-
-            while timestamps and timestamps[0] <= window_start:
-                timestamps.popleft()
-
-            if len(timestamps) >= self.limit:
-                return max(1, ceil(self.window_seconds - (now - timestamps[0])))
-
-            timestamps.append(now)
-            return None
-
-    def reset(self) -> None:
-        with self._lock:
-            self._requests.clear()
+@dataclass
+class RateLimitResult:
+    allowed: bool
+    retry_after: int = 0
+    limited_by: str | None = None
+    limit: int | None = None
+    remaining: int | None = None
+    reset_at: int | None = None
 
 
-rate_limiter = InMemoryRateLimiter(
-    limit=settings.rate_limit_requests,
-    window_seconds=settings.rate_limit_window_seconds,
-)
+async def check_rate_limit(key: str, limit: int, window_seconds: int, label: str) -> RateLimitResult:
+    client = get_redis()
+    if client is None:
+        return RateLimitResult(allowed=True)
+
+    backoff_key = f"backoff:{key}"
+    violations_key = f"violations:{key}"
+    counter_key = f"rl:{key}"
+    now = int(time.time())
+
+    try:
+        retry_after = await client.ttl(backoff_key)
+        if retry_after and retry_after > 0:
+            return RateLimitResult(False, retry_after, label, limit, 0, now + retry_after)
+
+        count = await client.incr(counter_key)
+        if count == 1:
+            await client.expire(counter_key, window_seconds)
+
+        ttl = await client.ttl(counter_key)
+        reset_at = now + max(ttl, 0)
+        remaining = max(limit - count, 0)
+        if count <= limit:
+            await client.delete(violations_key)
+            return RateLimitResult(True, 0, label, limit, remaining, reset_at)
+
+        violations = await client.incr(violations_key)
+        await client.expire(violations_key, settings.rate_limit_backoff_max_seconds)
+        backoff = min(
+            settings.rate_limit_backoff_base_seconds * (2 ** max(violations - 1, 0)),
+            settings.rate_limit_backoff_max_seconds,
+        )
+        await client.setex(backoff_key, backoff, "1")
+        return RateLimitResult(False, backoff, label, limit, 0, now + backoff)
+    except Exception:
+        return RateLimitResult(allowed=True)
 
 
-async def enforce_rate_limit(request: Request) -> None:
-    client_host = request.client.host if request.client else "anonymous"
-    retry_after = rate_limiter.check(client_host)
-    if retry_after is None:
-        return
-
-    raise HTTPException(
-        status_code=429,
-        detail="Rate limit exceeded",
-        headers={"Retry-After": str(retry_after)},
-    )
+async def enforce_rate_limit() -> None:
+    return None
