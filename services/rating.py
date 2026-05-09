@@ -1,4 +1,4 @@
-from models.codechef import CodeChefRatingHistoryResponse
+from models.rating import CodeChefRatingHistoryResponse
 from services.profile import fetch_codechef_profile
 
 

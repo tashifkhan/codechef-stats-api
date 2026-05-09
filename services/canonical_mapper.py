@@ -1,31 +1,26 @@
-"""Builds the unified cross-platform card for CodeChef from the scraped profile.
+"""Builds the canonical cross-platform card for CodeChef from the scraped profile.
 
 CodeChef only exposes a single HTML page, so every section is derived from one
 ``CodeChefProfileResponse``: the rating blob yields contests + a rating series,
 the daily-submission blob yields the heatmap (with computed streaks), and the
 star label yields the rank. CodeChef has no public badges, so that section is
-empty. See ../UNIFIED_SCHEMA.md.
+empty. See ../CANONICAL_SCHEMA.md.
 """
 
 from datetime import date, datetime, timedelta, timezone
 from math import ceil
 from typing import List, Optional
 
-from models.codechef import CodeChefProfileResponse
-from models.unified import (
-    ContestHistoryItem,
-    HeatDay,
-    RatingPoint,
-    UnifiedBadges,
-    UnifiedCard,
-    UnifiedContests,
-    UnifiedHeatmap,
-    UnifiedProfile,
-    UnifiedRating,
-    UnifiedStats,
-    UnifiedSummary,
-    YearContribution,
-)
+from models.profile import CodeChefProfileResponse
+from models.canonical.badges import Badges
+from models.canonical.card import Card
+from models.canonical.contests import ContestHistoryItem, Contests
+from models.canonical.heatmap import HeatDay, Heatmap, YearContribution
+from models.canonical.profile import Profile
+from models.canonical.rating import RatingPoint, Rating
+from models.canonical.stats import Stats
+from models.canonical.summary import Summary
+from services import topics
 from services.profile import fetch_codechef_profile
 
 
@@ -50,8 +45,8 @@ def _entry_date(entry: dict) -> Optional[date]:
         return None
 
 
-def profile_from(profile: CodeChefProfileResponse, handle: str) -> UnifiedProfile:
-    return UnifiedProfile(
+def profile_from(profile: CodeChefProfileResponse, handle: str) -> Profile:
+    return Profile(
         displayName=profile.name,
         username=handle,
         avatar=profile.profile,
@@ -61,15 +56,15 @@ def profile_from(profile: CodeChefProfileResponse, handle: str) -> UnifiedProfil
     )
 
 
-def stats_from(profile: CodeChefProfileResponse) -> UnifiedStats:
-    return UnifiedStats(
+async def stats_from(profile: CodeChefProfileResponse, handle: str) -> Stats:
+    return Stats(
         totalSolved=profile.totalSolved or 0,
         byDifficulty={},
-        topicAnalysis=[],
+        topicAnalysis=await topics.build_topic_analysis(handle),
     )
 
 
-def contests_from(profile: CodeChefProfileResponse) -> UnifiedContests:
+def contests_from(profile: CodeChefProfileResponse) -> Contests:
     history: List[ContestHistoryItem] = []
     for entry in profile.ratingData:
         if not isinstance(entry, dict):
@@ -89,7 +84,7 @@ def contests_from(profile: CodeChefProfileResponse) -> UnifiedContests:
                 ranking=_to_int(entry.get("rank")),
             )
         )
-    return UnifiedContests(
+    return Contests(
         count=len(history),
         rating=profile.currentRating,
         maxRating=profile.highestRating,
@@ -99,7 +94,7 @@ def contests_from(profile: CodeChefProfileResponse) -> UnifiedContests:
     )
 
 
-def rating_from(profile: CodeChefProfileResponse, contests: Optional[UnifiedContests] = None) -> UnifiedRating:
+def rating_from(profile: CodeChefProfileResponse, contests: Optional[Contests] = None) -> Rating:
     if contests is None:
         contests = contests_from(profile)
     history = [
@@ -107,7 +102,7 @@ def rating_from(profile: CodeChefProfileResponse, contests: Optional[UnifiedCont
         for h in contests.history
         if h.rating is not None
     ]
-    return UnifiedRating(current=profile.currentRating, max=profile.highestRating, history=history)
+    return Rating(current=profile.currentRating, max=profile.highestRating, history=history)
 
 
 def _level(count: int, max_daily: int) -> int:
@@ -139,7 +134,7 @@ def _parse_heatmap_date(raw) -> Optional[date]:
         return None
 
 
-def heatmap_from(profile: CodeChefProfileResponse) -> UnifiedHeatmap:
+def heatmap_from(profile: CodeChefProfileResponse) -> Heatmap:
     date_counts: dict[date, int] = {}
     for entry in profile.heatMap:
         if not isinstance(entry, dict):
@@ -150,7 +145,7 @@ def heatmap_from(profile: CodeChefProfileResponse) -> UnifiedHeatmap:
         date_counts[day] = date_counts.get(day, 0) + (_to_int(entry.get("value")) or 0)
 
     if not date_counts:
-        return UnifiedHeatmap()
+        return Heatmap()
 
     active_dates = sorted(date_counts)
     max_daily = max(date_counts.values())
@@ -181,7 +176,7 @@ def heatmap_from(profile: CodeChefProfileResponse) -> UnifiedHeatmap:
         bucket["totalSubmissions"] += count
         bucket["activeDays"] += 1
 
-    return UnifiedHeatmap(
+    return Heatmap(
         totalSubmissions=total_submissions,
         totalActiveDays=len(active_dates),
         currentStreak=current_streak,
@@ -200,8 +195,8 @@ def heatmap_from(profile: CodeChefProfileResponse) -> UnifiedHeatmap:
     )
 
 
-def summary_from(card: UnifiedCard) -> UnifiedSummary:
-    return UnifiedSummary(
+def summary_from(card: Card) -> Summary:
+    return Summary(
         totalSolved=card.stats.totalSolved,
         totalActiveDays=card.heatmap.totalActiveDays,
         totalContests=card.contests.count,
@@ -212,19 +207,19 @@ def summary_from(card: UnifiedCard) -> UnifiedSummary:
     )
 
 
-def card_from(profile: CodeChefProfileResponse, handle: str) -> UnifiedCard:
+async def card_from(profile: CodeChefProfileResponse, handle: str) -> Card:
     contests = contests_from(profile)
-    return UnifiedCard(
+    return Card(
         username=handle,
         profile=profile_from(profile, handle),
-        stats=stats_from(profile),
+        stats=await stats_from(profile, handle),
         contests=contests,
         rating=rating_from(profile, contests),
         heatmap=heatmap_from(profile),
-        badges=UnifiedBadges(),
+        badges=Badges(),
     )
 
 
-async def build_card(handle: str) -> UnifiedCard:
+async def build_card(handle: str) -> Card:
     profile = await fetch_codechef_profile(handle)
-    return card_from(profile, handle)
+    return await card_from(profile, handle)
