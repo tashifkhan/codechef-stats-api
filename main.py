@@ -1,13 +1,18 @@
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
-from models.templates import dashboard_template, html_template
+from core.middleware import CacheRateLimitMiddleware
+from routes.badges import router as badges_router
+from routes.contests import router as contests_router
+from routes.docs import router as docs_router
 from routes.heatmap import router as heatmap_router
+from routes.legacy import router as legacy_router
 from routes.profile import router as profile_router
 from routes.rating import router as rating_router
-from routes.unified import router as unified_router
+from routes.stats import router as stats_router
+from routes.summary import router as summary_router
+from routes.topics import router as topics_router
 
 
 app = FastAPI(
@@ -23,22 +28,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(CacheRateLimitMiddleware, platform="codechef")
 
+app.include_router(docs_router)
 app.include_router(profile_router)
-app.include_router(heatmap_router)
+app.include_router(stats_router)
+app.include_router(contests_router)
 app.include_router(rating_router)
+app.include_router(heatmap_router)
+app.include_router(topics_router)
+app.include_router(badges_router)
 
 
-@app.get("/", tags=["meta"], response_class=HTMLResponse)
-async def root() -> HTMLResponse:
-    return HTMLResponse(content=html_template)
-
-
-@app.get("/dashboard", tags=["meta"], response_class=HTMLResponse)
-async def dashboard() -> HTMLResponse:
-    return HTMLResponse(content=dashboard_template)
-
-
-# Unified router is registered last so the catch-all ``/{handle}`` summary route
-# does not shadow the static meta routes above (``/`` and ``/dashboard``).
-app.include_router(unified_router)
+app.include_router(summary_router)
+app.include_router(legacy_router)
