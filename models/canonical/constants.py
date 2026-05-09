@@ -1,0 +1,2 @@
+PLATFORM = "codechef"
+CATEGORY = "competitive"
