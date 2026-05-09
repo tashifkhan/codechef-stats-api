@@ -3,7 +3,7 @@ from datetime import date, timedelta
 import pytest
 from fastapi import HTTPException
 
-from models.codechef import CodeChefProfileResponse
+from models.profile import CodeChefProfileResponse
 from services.heatmap import fetch_heatmap
 
 
