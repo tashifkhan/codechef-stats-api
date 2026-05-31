@@ -7,6 +7,7 @@ from models.templates import dashboard_template, html_template
 from routes.heatmap import router as heatmap_router
 from routes.profile import router as profile_router
 from routes.rating import router as rating_router
+from routes.unified import router as unified_router
 
 
 app = FastAPI(
@@ -36,3 +37,8 @@ async def root() -> HTMLResponse:
 @app.get("/dashboard", tags=["meta"], response_class=HTMLResponse)
 async def dashboard() -> HTMLResponse:
     return HTMLResponse(content=dashboard_template)
+
+
+# Unified router is registered last so the catch-all ``/{handle}`` summary route
+# does not shadow the static meta routes above (``/`` and ``/dashboard``).
+app.include_router(unified_router)
