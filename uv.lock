@@ -82,6 +82,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata]
@@ -94,7 +95,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.3" }]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "uvicorn", specifier = ">=0.46.0" },
+]
 
 [[package]]
 name = "colorama"

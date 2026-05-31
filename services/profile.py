@@ -54,6 +54,24 @@ def _make_absolute(url: str | None) -> str | None:
     return f"{settings.codechef_base_url}{url}"
 
 
+def _parse_total_solved(soup: "BeautifulSoup", page: str) -> int | None:
+    """Extract the total number of problems solved from the profile page.
+
+    CodeChef renders this as a "Total Problems Solved: N" heading. Falls back to
+    a regex over the raw page if the DOM structure changes.
+    """
+    section = soup.select_one(".rating-data-section.problems-solved")
+    if section:
+        heading = section.find(["h3", "h5"], string=re.compile(r"Total Problems Solved", re.I))
+        if heading:
+            count = _to_int(heading.get_text(strip=True))
+            if count is not None:
+                return count
+
+    match = re.search(r"Total Problems Solved\s*:?\s*(\d+)", page, re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
 def parse_codechef_profile(page: str, status_code: int) -> CodeChefProfileResponse:
     soup = BeautifulSoup(page, "html.parser")
 
@@ -77,6 +95,8 @@ def parse_codechef_profile(page: str, status_code: int) -> CodeChefProfileRespon
         if highest_match:
             highest_rating = int(highest_match.group(1))
 
+    total_solved = _parse_total_solved(soup, page)
+
     return CodeChefProfileResponse(
         success=True,
         status=status_code,
@@ -89,6 +109,7 @@ def parse_codechef_profile(page: str, status_code: int) -> CodeChefProfileRespon
         globalRank=_to_int(ranks[0].get_text(strip=True)) if len(ranks) > 0 else None,
         countryRank=_to_int(ranks[1].get_text(strip=True)) if len(ranks) > 1 else None,
         stars=rating_label.get_text(strip=True) if rating_label else "unrated",
+        totalSolved=total_solved,
         heatMap=_normalize_heatmap(heatmap_data),
         ratingData=rating_data if isinstance(rating_data, list) else [],
     )

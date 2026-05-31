@@ -15,6 +15,7 @@ class CodeChefProfileResponse(BaseModel):
     globalRank: int | None = None
     countryRank: int | None = None
     stars: str = "unrated"
+    totalSolved: int | None = None
     heatMap: list[dict[str, Any]] = Field(default_factory=list)
     ratingData: list[Any] = Field(default_factory=list)
 
