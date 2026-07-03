@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 from fastapi import HTTPException
 
-from models.codechef import CodeChefHeatmapResponse
+from models.heatmap import CodeChefHeatmapResponse
 from services.profile import fetch_codechef_profile
 
 

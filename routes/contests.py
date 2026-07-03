@@ -3,13 +3,13 @@ from fastapi import APIRouter, Depends
 from core.rate_limit import enforce_rate_limit
 from models.canonical import make_envelope
 from services import canonical_mapper
-from services.profile import fetch_codechef_profile, fetch_profile_info
+from services.profile import fetch_codechef_profile
 
 
 router = APIRouter(tags=["Canonical"], dependencies=[Depends(enforce_rate_limit)])
 
 
-@router.get("/{handle}/profile")
-async def get_profile(handle: str):
+@router.get("/{handle}/contests")
+async def get_contests(handle: str):
     profile = await fetch_codechef_profile(handle)
-    return make_envelope(handle, canonical_mapper.profile_from(profile, handle))
+    return make_envelope(handle, canonical_mapper.contests_from(profile))

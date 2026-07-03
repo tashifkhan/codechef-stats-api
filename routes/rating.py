@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends
 
 from core.rate_limit import enforce_rate_limit
-from models.codechef import CodeChefRatingHistoryResponse
-from services.rating import fetch_rating_history
+from models.canonical import make_envelope
+from services import canonical_mapper
+from services.profile import fetch_codechef_profile
 
 
-router = APIRouter(tags=["rating"], dependencies=[Depends(enforce_rate_limit)])
+router = APIRouter(tags=["Canonical"], dependencies=[Depends(enforce_rate_limit)])
 
 
-@router.get("/rating/{handle}", response_model=CodeChefRatingHistoryResponse)
-async def get_rating_history(handle: str) -> CodeChefRatingHistoryResponse:
-    return await fetch_rating_history(handle)
+@router.get("/{handle}/rating")
+async def get_rating_history(handle: str):
+    profile = await fetch_codechef_profile(handle)
+    return make_envelope(handle, canonical_mapper.rating_from(profile))
