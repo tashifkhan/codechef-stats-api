@@ -1,5 +1,6 @@
 import json
 import re
+from urllib.parse import quote
 
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
@@ -65,6 +66,7 @@ a{color:inherit;text-decoration:none}
 .topnav a.icon{display:grid;place-items:center;width:32px;height:32px;padding:0;color:var(--muted);border:1px solid var(--line);border-radius:var(--r)}
 .topnav a.icon:hover{color:var(--ink);background:var(--panel-2);border-color:var(--line-2)}
 .topnav a.icon svg{width:16px;height:16px}
+.topnav a.ct-link{display:inline-flex;align-items:center;gap:6px}.topnav a.ct-link svg{width:13px;height:13px;flex:none}
 
 .wrap{display:grid;grid-template-columns:262px minmax(0,1fr) 224px;max-width:1480px;margin:0 auto}
 aside.side{position:sticky;top:54px;align-self:start;height:calc(100vh - 54px);overflow:auto;padding:22px 14px 48px;border-right:1px solid var(--line)}
@@ -305,6 +307,15 @@ document.querySelectorAll('.section').forEach(function(s){io.observe(s)});
 var si=document.querySelector('.search input');
 if(si)si.addEventListener('input',function(){var q=si.value.toLowerCase();
   document.querySelectorAll('.navgroup a').forEach(function(a){a.style.display=a.textContent.toLowerCase().indexOf(q)>-1?'':'none'});
+});
+function playgroundPath(){
+  var base = window.location.pathname.replace(new RegExp('/(docs|redoc)/?$'), '').replace(new RegExp('/$'), '');
+  return (base || '') + '/playground';
+}
+document.querySelectorAll('a[href="/playground"]').forEach(function(a){
+  var href = playgroundPath();
+  a.setAttribute('href', href);
+  a.addEventListener('click', function(e){ e.preventDefault(); window.location.assign(href); });
 });
 """
 
@@ -711,6 +722,28 @@ def _playground_rows(endpoints: list[tuple[str, str, str]]) -> str:
     return "".join(out)
 
 
+_ACCENT_INK = "#050506"
+
+# Browser-tab favicon — the accent chip that mirrors the topbar brand mark.
+_FAVICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+    f'<rect width="24" height="24" rx="5" fill="{ACCENT}"/>'
+    f'<g transform="translate(4.5 4.5) scale(0.625)" fill="{_ACCENT_INK}">'
+    f'<path d="{_LOGOS[PLATFORM_KEY]}"/></g></svg>'
+)
+_FAVICON_LINK = (
+    '<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,'
+    + quote(_FAVICON_SVG) + '"/>'
+)
+
+# Prompt ">_" mark for the CodeTrace cross-link, echoing the CodeTrace favicon.
+_CODETRACE_GLYPH = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"'
+    ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    '<path d="M6 8l4 4-4 4"/><path d="M13.5 16h4.5"/></svg>'
+)
+
+
 def _topbar(logo_svg: str, show_menu_btn: bool = True) -> str:
     menu_btn = '<button class="menu-btn" aria-label="Toggle navigation">&#9776;</button>' if show_menu_btn else ""
     return f"""
@@ -722,7 +755,7 @@ def _topbar(logo_svg: str, show_menu_btn: bool = True) -> str:
     <a href="/docs">OpenAPI</a>
     <a href="/redoc">ReDoc</a>
     <a class="icon" href="https://github.com/{REPO}" target="_blank" rel="noreferrer" title="View source on GitHub" aria-label="GitHub repository">{_GITHUB_ICON}</a>
-    <a href="{CODETRACE_URL}" target="_blank" rel="noreferrer" title="Browse every platform on CodeTrace">CodeTrace&nbsp;&#8599;</a>
+    <a class="ct-link" href="{CODETRACE_URL}" target="_blank" rel="noreferrer" title="Browse every platform on CodeTrace">{_CODETRACE_GLYPH}CodeTrace&nbsp;&#8599;</a>
     <a class="cta" href="/playground">Try it</a>
   </nav>
 </header>"""
@@ -774,6 +807,7 @@ def _playground_html() -> str:
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8"/>'
         '<meta name="viewport" content="width=device-width, initial-scale=1"/>'
+        + _FAVICON_LINK +
         f"<title>{PLATFORM} Playground</title>"
         '<link rel="preconnect" href="https://fonts.googleapis.com"/>'
         '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>'
@@ -904,6 +938,7 @@ def _docs_html(title_suffix: str = "Stats API") -> str:
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8"/>'
         '<meta name="viewport" content="width=device-width, initial-scale=1"/>'
+        + _FAVICON_LINK +
         f"<title>{PLATFORM} {title_suffix}</title>"
         '<link rel="preconnect" href="https://fonts.googleapis.com"/>'
         '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>'

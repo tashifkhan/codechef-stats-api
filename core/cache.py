@@ -5,6 +5,7 @@ from threading import Lock
 from time import monotonic
 from typing import Any, Generic, TypeVar
 
+import httpx
 from redis import asyncio as redis
 
 from core.config import settings
@@ -52,7 +53,27 @@ _client: redis.Redis | None = None
 
 
 def redis_enabled() -> bool:
-    return bool(settings.redis_url)
+    return bool(settings.upstash_redis_rest_url and settings.upstash_redis_rest_token) or bool(settings.redis_url)
+
+
+def upstash_enabled() -> bool:
+    return bool(settings.upstash_redis_rest_url and settings.upstash_redis_rest_token)
+
+
+async def upstash_command(command: str, *args: Any) -> Any | None:
+    if not upstash_enabled():
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            response = await client.post(
+                settings.upstash_redis_rest_url.rstrip("/"),
+                headers={"Authorization": f"Bearer {settings.upstash_redis_rest_token}"},
+                json=[command, *args],
+            )
+            response.raise_for_status()
+            return response.json().get("result")
+    except Exception:
+        return None
 
 
 def get_redis() -> redis.Redis | None:
@@ -65,6 +86,13 @@ def get_redis() -> redis.Redis | None:
 
 
 async def get_json(key: str) -> dict[str, Any] | None:
+    value = await upstash_command("GET", key)
+    if value:
+        try:
+            return json.loads(value) if isinstance(value, str) else value
+        except ValueError:
+            return None
+
     client = get_redis()
     if client is None:
         return None
@@ -81,6 +109,10 @@ async def get_json(key: str) -> dict[str, Any] | None:
 
 
 async def set_json(key: str, value: dict[str, Any], ttl_seconds: int) -> None:
+    if upstash_enabled():
+        await upstash_command("SETEX", key, ttl_seconds, json.dumps(value, separators=(",", ":")))
+        return
+
     client = get_redis()
     if client is None:
         return
