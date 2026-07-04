@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 60
     rate_limit_window_seconds: int = 60
     redis_url: str | None = os.getenv("REDIS_URL")
+    upstash_redis_rest_url: str | None = os.getenv("UPSTASH_REDIS_REST_URL")
+    upstash_redis_rest_token: str | None = os.getenv("UPSTASH_REDIS_REST_TOKEN")
     api_cache_ttl_seconds: int = int(os.getenv("API_CACHE_TTL_SECONDS", "3600"))
     invalid_user_cache_ttl_seconds: int = int(os.getenv("INVALID_USER_CACHE_TTL_SECONDS", "300"))
     rate_limit_ip_requests: int = int(os.getenv("RATE_LIMIT_IP_REQUESTS", "60"))
