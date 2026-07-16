@@ -1,4 +1,5 @@
 import hashlib
+import re
 import json
 from collections.abc import Callable
 
@@ -77,6 +78,16 @@ def _rate_limited_response(result: RateLimitResult) -> JSONResponse:
     )
 
 
+
+def _ttl_from_cache_control(headers: dict, default: int) -> int:
+    """Prefer response Cache-Control max-age when present (e.g. SVG 24h)."""
+    cache_control = headers.get("cache-control") or headers.get("Cache-Control") or ""
+    match = re.search(r"max-age=(\d+)", cache_control, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+    return default
+
+
 class CacheRateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, platform: str) -> None:
         super().__init__(app)
@@ -133,7 +144,8 @@ class CacheRateLimitMiddleware(BaseHTTPMiddleware):
             await set_json(invalid_key, {"invalid": True}, settings.invalid_user_cache_ttl_seconds)
         elif response.status_code == 200:
             headers.setdefault("Cache-Control", f"public, max-age={settings.api_cache_ttl_seconds}")
-            await set_json(key, self._cached_response(response, body), settings.api_cache_ttl_seconds)
+            ttl = _ttl_from_cache_control(headers, settings.api_cache_ttl_seconds)
+            await set_json(key, self._cached_response(response, body), ttl)
 
         return Response(
             content=body,
