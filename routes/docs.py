@@ -144,7 +144,7 @@ h1.title{font-size:clamp(32px,4.4vw,46px);line-height:1.05;letter-spacing:-.025e
 .ptable td{padding:8px 10px;border-bottom:1px solid var(--line);color:var(--muted);vertical-align:top}
 .ptable tr:last-child td{border-bottom:0}
 .ptable td code{font-family:var(--mono);color:var(--ink)}
-.req{font-family:var(--mono);font-size:11px;color:var(--accent)}
+.req{font-family:var(--mono);font-size:11px;color:var(--accent)}.opt{font-family:var(--mono);font-size:11px;color:var(--faint)}
 
 code.ic{font-family:var(--mono);font-size:.86em;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--ink)}
 
@@ -304,6 +304,11 @@ _PLAYGROUND_CSS = """
 .pg-svg-empty{color:var(--faint);font-size:13px;text-align:center}
 .pg-ep-svg{display:flex;justify-content:center;padding:12px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r)}
 .pg-ep-svg img{max-width:100%;height:auto}
+.pg-ep-qparams{margin:0 0 12px;padding:12px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel-2)}
+.pg-ep-qparams-lbl{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-family:var(--mono);margin:0 0 10px}
+.pg-ep-qhint{margin:10px 0 0;color:var(--faint);font-size:12px;line-height:1.55}
+.pg-ep-qhint .ic{font-size:11px}
+
 """
 
 _JS = """
@@ -475,6 +480,17 @@ _PLAYGROUND_JS = """
     var value = input.value.trim();
     if(hasParam && !value){ input.focus(); return Promise.resolve(); }
     var url = buildUrl(tmpl, value);
+    if(ep.getAttribute('data-svg') === '1' || (tmpl && tmpl.indexOf('/stats/svg') !== -1)){
+      var q = [];
+      var th = ep.querySelector('.pg-ep-theme');
+      var ex = ep.querySelector('.pg-ep-exclude');
+      // fall back to global SVG viewer controls
+      if((!th || !th.value) && document.getElementById('pg-svg-theme')) th = document.getElementById('pg-svg-theme');
+      if((!ex || !ex.value) && document.getElementById('pg-svg-exclude')) ex = document.getElementById('pg-svg-exclude');
+      if(th && th.value) q.push('theme=' + encodeURIComponent(th.value));
+      if(ex && ex.value && ex.value.trim()) q.push('exclude=' + encodeURIComponent(ex.value.trim()));
+      if(q.length) url += (url.indexOf('?') === -1 ? '?' : '&') + q.join('&');
+    }
     var status = ep.querySelector('.pg-status');
     var body = ep.querySelector('.ep-body');
     var runBtn = ep.querySelector('.pg-run-btn');
@@ -485,10 +501,12 @@ _PLAYGROUND_JS = """
     runBtn.innerHTML = '<span class="pg-spinner"></span>';
     status.innerHTML = '<span class="pg-spinner"></span>';
     status.className = 'pg-status busy';
-    body.innerHTML = '<div class="pg-ep-loading"><div class="req"><span class="pg-spinner"></span>Requesting ' + escHtml(url) + '\\u2026</div>' +
+    var keepParams = ep.querySelector('.pg-ep-qparams');
+    var keepParamsHtml = keepParams ? keepParams.outerHTML : '';
+    body.innerHTML = keepParamsHtml + '<div class="pg-ep-loading"><div class="req"><span class="pg-spinner"></span>Requesting ' + escHtml(url) + '\\u2026</div>' +
       '<div class="pg-skel w90"></div><div class="pg-skel w70"></div><div class="pg-skel w50"></div><div class="pg-skel w35"></div></div>';
     var start = performance.now();
-    var isSvg = /\/stats\/svg/.test(tmpl) || /\/svg(?:\?|$)/.test(url);
+    var isSvg = (tmpl && tmpl.indexOf('/stats/svg') !== -1) || (url && url.indexOf('/stats/svg') !== -1);
     return fetch(url).then(function(r){
       var ms = Math.round(performance.now() - start);
       var ctype = (r.headers.get('content-type') || '').toLowerCase();
@@ -496,13 +514,13 @@ _PLAYGROUND_JS = """
         return r.text().then(function(text){
           ep.classList.remove('busy');
           ep.classList.add(r.ok ? 'ok' : 'err');
-          status.textContent = r.status + ' \u00b7 ' + ms + 'ms';
+          status.textContent = r.status + ' \\u00b7 ' + ms + 'ms';
           status.className = 'pg-status ' + (r.ok ? 'ok' : 'err');
-          var meta = '<div class="pg-ep-meta"><span class="url">GET ' + escHtml(url) + '</span><button type="button" class="pg-copy">Copy URL</button></div>';
+          var meta = '<div class=\"pg-ep-meta\"><span class=\"url\">GET ' + escHtml(url) + '</span><button type=\"button\" class=\"pg-copy\">Copy URL</button></div>';
           var blob = new Blob([text], {type: 'image/svg+xml'});
           var objUrl = URL.createObjectURL(blob);
-          body.innerHTML = meta + '<div class="pg-ep-svg"><img alt="stats svg" src="' + objUrl + '"/></div>' +
-            '<pre class="pg-ep-resp" style="margin-top:10px;max-height:180px">' + escHtml(text.slice(0, 1200)) + (text.length > 1200 ? '\n\u2026' : '') + '</pre>';
+          body.innerHTML = keepParamsHtml + meta + '<div class="pg-ep-svg"><img alt="stats svg" src="' + objUrl + '"/></div>' +
+            '<pre class="pg-ep-resp" style="margin-top:10px;max-height:180px">' + escHtml(text.slice(0, 1200)) + (text.length > 1200 ? '\\n\\u2026' : '') + '</pre>';
           body.querySelector('.pg-copy').addEventListener('click', function(e){
             e.stopPropagation();
             navigator.clipboard.writeText(url).then(function(){
@@ -533,7 +551,7 @@ _PLAYGROUND_JS = """
           : '';
         var prettyView = '<div class="pg-view" data-view="pretty"' + (formatted ? '' : ' hidden') + '>' + formatted + '</div>';
         var rawView = '<div class="pg-view" data-view="raw"' + (formatted ? ' hidden' : '') + '><pre class="pg-ep-resp">' + escHtml(pretty) + '</pre></div>';
-        body.innerHTML = meta + tabs + prettyView + rawView;
+        body.innerHTML = keepParamsHtml + meta + tabs + prettyView + rawView;
         body.querySelector('.pg-copy').addEventListener('click', function(e){
           e.stopPropagation();
           navigator.clipboard.writeText(pretty).then(function(){
@@ -576,7 +594,7 @@ _PLAYGROUND_JS = """
 
 
   function statsSvgPath(){
-    var hit = allEps.find(function(ep){ return /\/stats\/svg/.test(ep.getAttribute('data-path') || ''); });
+    var hit = allEps.find(function(ep){ var p = ep.getAttribute('data-path') || ''; return p.indexOf('/stats/svg') !== -1; });
     return hit ? hit.getAttribute('data-path') : null;
   }
   var svgBtn = document.getElementById('pg-svg-preview');
@@ -601,7 +619,7 @@ _PLAYGROUND_JS = """
       if(svgTheme && svgTheme.value) params.push('theme=' + encodeURIComponent(svgTheme.value));
       if(svgExclude && svgExclude.value.trim()) params.push('exclude=' + encodeURIComponent(svgExclude.value.trim()));
       if(params.length) url += (url.indexOf('?') === -1 ? '?' : '&') + params.join('&');
-      svgFrame.innerHTML = '<div class="pg-svg-empty"><span class="pg-spinner" style="display:inline-block;vertical-align:middle;margin-right:8px"></span>Loading card\u2026</div>';
+      svgFrame.innerHTML = '<div class="pg-svg-empty"><span class="pg-spinner" style="display:inline-block;vertical-align:middle;margin-right:8px"></span>Loading card\\u2026</div>';
       if(svgMeta) svgMeta.textContent = 'GET ' + url;
       var start = performance.now();
       fetch(url).then(function(r){
@@ -770,6 +788,17 @@ def _endpoint_rows(endpoints: list[tuple[str, str, str]], is_legacy: bool = Fals
             )
         else:
             ptable = '<div class="ep-sub">Path parameters</div><p class="ep-note">None.</p>'
+        if path.rstrip("/").endswith("/stats/svg") or path.endswith("/svg"):
+            ptable += (
+                '<div class="ep-sub">Query parameters</div>'
+                '<table class="ptable"><thead><tr><th>Name</th><th>Type</th><th></th>'
+                '<th>Description</th></tr></thead><tbody>'
+                '<tr><td><code>theme</code></td><td>string</td><td><span class="opt">optional</span></td>'
+                '<td><code>dark</code> (default) or <code>light</code>.</td></tr>'
+                '<tr><td><code>exclude</code></td><td>string</td><td><span class="opt">optional</span></td>'
+                '<td>Comma-separated topics/languages to omit from the bars.</td></tr>'
+                '</tbody></table>'
+            )
         example = _example_block(section, empty="Empty" in summary) if section else None
         if example:
             block = (
@@ -782,6 +811,12 @@ def _endpoint_rows(endpoints: list[tuple[str, str, str]], is_legacy: bool = Fals
                 '<div class="ep-sub">Response &middot; 200 OK</div>'
                 '<p class="ep-note">Deprecated alias &mdash; returns the standard envelope '
                 "wrapping the legacy payload.</p>"
+            )
+        elif path.rstrip("/").endswith("/stats/svg") or path.endswith("/svg"):
+            block = (
+                '<div class="ep-sub">Response &middot; 200 OK</div>'
+                '<p class="ep-note">Returns <code class="ic">image/svg+xml</code> (not JSON). '
+                'Use the <a class="link" href="/playground">playground</a> to preview the card live.</p>'
             )
         else:
             block = (
@@ -801,8 +836,43 @@ def _endpoint_rows(endpoints: list[tuple[str, str, str]], is_legacy: bool = Fals
 def _playground_rows(endpoints: list[tuple[str, str, str]]) -> str:
     out = []
     for method, path, summary in endpoints:
+        is_svg = path.rstrip("/").endswith("/stats/svg") or path.endswith("/svg")
+        if is_svg:
+            params_html = (
+                '<div class="pg-ep-qparams">'
+                '<div class="pg-ep-qparams-lbl">Query parameters</div>'
+                '<div class="pg-svg-controls" style="margin:0">'
+                '<div class="pg-svg-field" style="flex:1">'
+                '<label>theme</label>'
+                '<select class="pg-ep-theme">'
+                '<option value="dark" selected>dark</option>'
+                '<option value="light">light</option>'
+                '</select></div>'
+                '<div class="pg-svg-field" style="flex:2">'
+                '<label>exclude</label>'
+                '<input class="pg-ep-exclude" type="text" placeholder="e.g. HTML,CSS,Markdown" />'
+                '</div></div>'
+                '<p class="pg-ep-qhint">Optional. <code class="ic">theme</code> picks light/dark; '
+                '<code class="ic">exclude</code> omits topics/languages (comma-separated). '
+                'Response is <code class="ic">image/svg+xml</code>, cached 24h.</p>'
+                '</div>'
+            )
+            body_seed = (
+                params_html
+                + '<pre class="pg-ep-resp"><span class="pg-placeholder">'
+                "Run this endpoint to preview the live SVG card here."
+                "</span></pre>"
+            )
+            svg_attr = ' data-svg="1"'
+        else:
+            body_seed = (
+                '<pre class="pg-ep-resp"><span class="pg-placeholder">'
+                "Run this endpoint to see the live response here."
+                "</span></pre>"
+            )
+            svg_attr = ""
         out.append(
-            f'<div class="ep" data-path="{_esc(path)}">'
+            f'<div class="ep" data-path="{_esc(path)}"{svg_attr}>'
             '<div class="ep-head pg-row" role="button" tabindex="0">'
             f'<span class="verb">{method}</span>'
             f'<code class="ep-path">{path}</code>'
@@ -811,12 +881,12 @@ def _playground_rows(endpoints: list[tuple[str, str, str]]) -> str:
             '<button type="button" class="pg-run-btn">Run</button>'
             '<span class="chev">&rsaquo;</span>'
             "</div>"
-            '<div class="ep-body">'
-            '<pre class="pg-ep-resp"><span class="pg-placeholder">Run this endpoint to see the live response here.</span></pre>'
-            "</div>"
+            f'<div class="ep-body">{body_seed}</div>'
             "</div>"
         )
     return "".join(out)
+
+
 
 
 _ACCENT_INK = "#050506"
