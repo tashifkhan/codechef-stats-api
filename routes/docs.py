@@ -23,7 +23,7 @@ CANONICAL_ENDPOINTS = [
     ("GET", "/{handle}", "Summary"),
     ("GET", "/{handle}/profile", "Profile"),
     ("GET", "/{handle}/stats", "Solved stats"),
-    ("GET", "/{handle}/stats/svg", "Embeddable stats SVG card (24h cache)"),
+    ("GET", "/{handle}/stats/svg", "Embeddable stats SVG card (theme, exclude; 24h cache)"),
     ("GET", "/{handle}/topics", "Topic analysis"),
     ("GET", "/{handle}/contests", "Contest history"),
     ("GET", "/{handle}/rating", "Rating timeline"),
@@ -287,7 +287,23 @@ _PLAYGROUND_CSS = """
 @media(max-width:640px){
   .pg-bar-row{flex-direction:column}
   .pg-runall{width:100%;justify-content:center}
+  .pg-svg-controls{flex-direction:column;align-items:stretch}
+  .pg-svg-controls .pg-btn{width:100%;justify-content:center}
 }
+
+.pg-svg-panel{margin:28px 0 8px;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:18px 18px 16px;animation:pg-fade-up .4s .18s ease both}
+.pg-svg-panel .pg-group-label{margin:0 0 12px}
+.pg-svg-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px}
+.pg-svg-field{display:flex;flex-direction:column;gap:5px;min-width:120px;flex:1}
+.pg-svg-field label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-family:var(--mono)}
+.pg-svg-field input,.pg-svg-field select{background:var(--bg);border:1px solid var(--line-2);border-radius:var(--r);padding:9px 11px;color:var(--ink);font-family:var(--mono);font-size:13px;outline:none}
+.pg-svg-field input:focus,.pg-svg-field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent)}
+.pg-svg-frame{display:flex;justify-content:center;align-items:center;min-height:120px;padding:16px;border:1px dashed var(--line-2);border-radius:var(--r);background:var(--bg);overflow:auto}
+.pg-svg-frame img{max-width:100%;height:auto;display:block}
+.pg-svg-meta{margin-top:10px;font-family:var(--mono);font-size:11.5px;color:var(--muted);word-break:break-all}
+.pg-svg-empty{color:var(--faint);font-size:13px;text-align:center}
+.pg-ep-svg{display:flex;justify-content:center;padding:12px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r)}
+.pg-ep-svg img{max-width:100%;height:auto}
 """
 
 _JS = """
@@ -472,8 +488,30 @@ _PLAYGROUND_JS = """
     body.innerHTML = '<div class="pg-ep-loading"><div class="req"><span class="pg-spinner"></span>Requesting ' + escHtml(url) + '\\u2026</div>' +
       '<div class="pg-skel w90"></div><div class="pg-skel w70"></div><div class="pg-skel w50"></div><div class="pg-skel w35"></div></div>';
     var start = performance.now();
+    var isSvg = /\/stats\/svg/.test(tmpl) || /\/svg(?:\?|$)/.test(url);
     return fetch(url).then(function(r){
       var ms = Math.round(performance.now() - start);
+      var ctype = (r.headers.get('content-type') || '').toLowerCase();
+      if(isSvg || ctype.indexOf('image/svg') !== -1){
+        return r.text().then(function(text){
+          ep.classList.remove('busy');
+          ep.classList.add(r.ok ? 'ok' : 'err');
+          status.textContent = r.status + ' \u00b7 ' + ms + 'ms';
+          status.className = 'pg-status ' + (r.ok ? 'ok' : 'err');
+          var meta = '<div class="pg-ep-meta"><span class="url">GET ' + escHtml(url) + '</span><button type="button" class="pg-copy">Copy URL</button></div>';
+          var blob = new Blob([text], {type: 'image/svg+xml'});
+          var objUrl = URL.createObjectURL(blob);
+          body.innerHTML = meta + '<div class="pg-ep-svg"><img alt="stats svg" src="' + objUrl + '"/></div>' +
+            '<pre class="pg-ep-resp" style="margin-top:10px;max-height:180px">' + escHtml(text.slice(0, 1200)) + (text.length > 1200 ? '\n\u2026' : '') + '</pre>';
+          body.querySelector('.pg-copy').addEventListener('click', function(e){
+            e.stopPropagation();
+            navigator.clipboard.writeText(url).then(function(){
+              var b = e.currentTarget, t = b.textContent;
+              b.textContent = 'Copied'; setTimeout(function(){ b.textContent = t; }, 1200);
+            });
+          });
+        });
+      }
       return r.text().then(function(text){
         var parsed = null;
         try{ parsed = JSON.parse(text); }catch(e){}
@@ -533,6 +571,55 @@ _PLAYGROUND_JS = """
       var list = document.querySelector('.pg-legacy-list');
       var open = list.classList.toggle('open');
       legacyToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
+
+
+  function statsSvgPath(){
+    var hit = allEps.find(function(ep){ return /\/stats\/svg/.test(ep.getAttribute('data-path') || ''); });
+    return hit ? hit.getAttribute('data-path') : null;
+  }
+  var svgBtn = document.getElementById('pg-svg-preview');
+  var svgFrame = document.getElementById('pg-svg-frame');
+  var svgMeta = document.getElementById('pg-svg-meta');
+  var svgTheme = document.getElementById('pg-svg-theme');
+  var svgExclude = document.getElementById('pg-svg-exclude');
+  if(svgBtn && svgFrame){
+    svgBtn.addEventListener('click', function(){
+      var tmpl = statsSvgPath();
+      var value = input.value.trim();
+      if(!tmpl){
+        svgFrame.innerHTML = '<div class="pg-svg-empty">No /stats/svg endpoint registered.</div>';
+        return;
+      }
+      if(!value){
+        input.classList.remove('shake'); void input.offsetWidth; input.classList.add('shake'); input.focus();
+        return;
+      }
+      var url = buildUrl(tmpl, value);
+      var params = [];
+      if(svgTheme && svgTheme.value) params.push('theme=' + encodeURIComponent(svgTheme.value));
+      if(svgExclude && svgExclude.value.trim()) params.push('exclude=' + encodeURIComponent(svgExclude.value.trim()));
+      if(params.length) url += (url.indexOf('?') === -1 ? '?' : '&') + params.join('&');
+      svgFrame.innerHTML = '<div class="pg-svg-empty"><span class="pg-spinner" style="display:inline-block;vertical-align:middle;margin-right:8px"></span>Loading card\u2026</div>';
+      if(svgMeta) svgMeta.textContent = 'GET ' + url;
+      var start = performance.now();
+      fetch(url).then(function(r){
+        return r.text().then(function(text){
+          var ms = Math.round(performance.now() - start);
+          if(!r.ok){
+            svgFrame.innerHTML = '<div class="pg-svg-empty">Failed (' + r.status + ') in ' + ms + 'ms</div>';
+            return;
+          }
+          var blob = new Blob([text], {type: 'image/svg+xml'});
+          var objUrl = URL.createObjectURL(blob);
+          svgFrame.innerHTML = '<img alt="stats svg preview" src="' + objUrl + '"/>';
+          if(svgMeta) svgMeta.textContent = 'GET ' + url + '  ·  ' + r.status + '  ·  ' + ms + 'ms  ·  cache 24h';
+          pushRecent(value);
+        });
+      }).catch(function(err){
+        svgFrame.innerHTML = '<div class="pg-svg-empty">' + escHtml(err.message || 'Request failed') + '</div>';
+      });
     });
   }
 
@@ -804,6 +891,26 @@ def _playground_html() -> str:
       <div class="pg-progress"><div class="pg-progress-bar"></div></div>
     </form>
     <p class="pg-hint">Path parameters such as <code class="ic">{{{PARAM}}}</code> are filled in with the value above. Prefer raw JSON in a new tab? Open <a class="link" href="{TRY_PATH}">{TRY_PATH}</a>.</p>
+  </div>
+
+  <div class="pg-svg-panel">
+    <div class="pg-group-label"><span>Stats SVG viewer</span></div>
+    <div class="pg-svg-controls">
+      <div class="pg-svg-field" style="flex:1.2">
+        <label for="pg-svg-theme">Theme</label>
+        <select id="pg-svg-theme">
+          <option value="dark" selected>dark</option>
+          <option value="light">light</option>
+        </select>
+      </div>
+      <div class="pg-svg-field" style="flex:2">
+        <label for="pg-svg-exclude">Exclude topics / langs</label>
+        <input id="pg-svg-exclude" type="text" placeholder="e.g. HTML,CSS,Markdown" />
+      </div>
+      <button type="button" class="pg-btn" id="pg-svg-preview" style="height:40px;min-width:120px">Preview SVG</button>
+    </div>
+    <div class="pg-svg-frame" id="pg-svg-frame"><div class="pg-svg-empty">Enter a {PARAM} above, then preview the stats card.</div></div>
+    <div class="pg-svg-meta" id="pg-svg-meta"></div>
   </div>
 
   <div class="pg-group-label"><span>Canonical endpoints &middot; {len(CANONICAL_ENDPOINTS)}</span></div>

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import html
 from dataclasses import asdict, is_dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 from fastapi.responses import Response
 
@@ -53,6 +53,10 @@ TOTAL_LABELS: Dict[str, str] = {
     "github": "Total Commits",
 }
 
+TOPIC_LABELS: Dict[str, str] = {
+    "github": "TOP LANGUAGES",
+}
+
 THEMES = {
     "dark": {
         "bg": "#0a0a0c",
@@ -79,6 +83,13 @@ def _escape(value: Any) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
+def parse_exclude_list(exclude: Optional[str] = None) -> List[str]:
+    """Parse comma-separated exclude query into stripped language/topic names."""
+    if not exclude:
+        return []
+    return [part.strip() for part in exclude.split(",") if part.strip()]
+
+
 def _stats_dict(stats: Any) -> Dict[str, Any]:
     if stats is None:
         return {}
@@ -103,7 +114,8 @@ def _stats_dict(stats: Any) -> Dict[str, Any]:
     return {}
 
 
-def _topic_pairs(raw: Any) -> List[Tuple[str, int]]:
+def _topic_pairs(raw: Any, exclude: Optional[Sequence[str]] = None) -> List[Tuple[str, int]]:
+    banned = {item.lower() for item in (exclude or []) if item}
     pairs: List[Tuple[str, int]] = []
     if not raw:
         return pairs
@@ -114,8 +126,11 @@ def _topic_pairs(raw: Any) -> List[Tuple[str, int]]:
         else:
             topic = getattr(item, "topic", None) or getattr(item, "name", "") or ""
             count = int(getattr(item, "count", 0) or 0)
-        if topic:
-            pairs.append((str(topic), count))
+        if not topic:
+            continue
+        if str(topic).lower() in banned:
+            continue
+        pairs.append((str(topic), count))
     return pairs
 
 
@@ -134,7 +149,6 @@ def _difficulty_rows(by_difficulty: Mapping[str, Any], accent: str) -> List[Tupl
             continue
         label = str(key).replace("_", " ").title()
         rows.append((label, int(value or 0), accent))
-    # Drop all-zero rows only when there are other non-zero rows
     if any(count > 0 for _, count, _ in rows):
         rows = [row for row in rows if row[1] > 0] or rows
     return rows[:6]
@@ -150,6 +164,33 @@ def _fmt_num(value: Optional[Union[int, float]]) -> str:
     return f"{int(value):,}"
 
 
+def _extra_metrics(
+    platform_key: str,
+    data: Mapping[str, Any],
+    extras: Optional[Mapping[str, Any]],
+) -> List[Tuple[str, str]]:
+    """Build (label, value) chips shown under the primary total."""
+    merged: Dict[str, Any] = {}
+    if extras:
+        merged.update(extras)
+    for key in ("totalStars", "currentStreak", "longestStreak"):
+        if key in data and data.get(key) is not None and key not in merged:
+            merged[key] = data.get(key)
+
+    metrics: List[Tuple[str, str]] = []
+    if platform_key == "github" or "totalStars" in merged:
+        stars = merged.get("totalStars")
+        if stars is not None:
+            metrics.append(("Total Stars", _fmt_num(stars)))
+    current = merged.get("currentStreak")
+    longest = merged.get("longestStreak")
+    if current is not None:
+        metrics.append(("Current Streak", f"{_fmt_num(current)}d"))
+    if longest is not None:
+        metrics.append(("Longest Streak", f"{_fmt_num(longest)}d"))
+    return metrics
+
+
 def render_stats_svg(
     platform: str,
     username: str,
@@ -158,12 +199,15 @@ def render_stats_svg(
     accent: Optional[str] = None,
     theme: str = "dark",
     title: Optional[str] = None,
+    exclude: Optional[Iterable[str]] = None,
+    extras: Optional[Mapping[str, Any]] = None,
 ) -> str:
     """Build an SVG card from canonical Stats data."""
     platform_key = (platform or "").lower()
     accent_color = accent or PLATFORM_ACCENTS.get(platform_key, "#ffa116")
     platform_title = title or PLATFORM_TITLES.get(platform_key, platform_key.title() or "Stats")
     colors = THEMES.get((theme or "dark").lower(), THEMES["dark"])
+    exclude_list = [str(item) for item in (exclude or []) if item]
 
     data = _stats_dict(stats)
     total_solved = int(data.get("totalSolved") or 0)
@@ -172,9 +216,11 @@ def render_stats_svg(
     by_difficulty = data.get("byDifficulty") or {}
     if not isinstance(by_difficulty, Mapping):
         by_difficulty = {}
-    topics = _topic_pairs(data.get("topicAnalysis"))
+    topics = _topic_pairs(data.get("topicAnalysis"), exclude_list)
     diff_rows = _difficulty_rows(by_difficulty, accent_color)
     total_label = TOTAL_LABELS.get(platform_key, "Total Solved")
+    topic_label = TOPIC_LABELS.get(platform_key, "TOP TOPICS")
+    metrics = _extra_metrics(platform_key, data, extras)
 
     width = 420
     pad_x = 22
@@ -231,6 +277,24 @@ def render_stats_svg(
 
     y += 22
 
+    # Extra metrics (stars / streaks)
+    if metrics:
+        y += 10
+        col_w = (width - 2 * pad_x) / max(len(metrics), 1)
+        for idx, (label, value) in enumerate(metrics):
+            x = pad_x + idx * col_w
+            lines.append(
+                f'<text x="{x:.1f}" y="{y}" fill="{_escape(colors["faint"])}" font-size="10" '
+                f'font-family="ui-monospace,SFMono-Regular,Menlo,monospace" letter-spacing="0.05em">'
+                f'{_escape(label.upper())}</text>'
+            )
+            lines.append(
+                f'<text x="{x:.1f}" y="{y + 18}" fill="{_escape(colors["ink"])}" font-size="16" '
+                f'font-weight="600" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">'
+                f'{_escape(value)}</text>'
+            )
+        y += 30
+
     # Difficulty bars
     if diff_rows:
         y += 8
@@ -261,14 +325,14 @@ def render_stats_svg(
             y += 22
         y += 4
 
-    # Top topics
+    # Top topics / languages
     top_topics = topics[:5]
     if top_topics:
         y += 10
         lines.append(
             f'<text x="{pad_x}" y="{y}" fill="{_escape(colors["faint"])}" font-size="11" '
             f'font-family="ui-monospace,SFMono-Regular,Menlo,monospace" letter-spacing="0.06em">'
-            f'TOP TOPICS</text>'
+            f'{_escape(topic_label)}</text>'
         )
         y += 16
         max_topic = max((count for _, count in top_topics), default=1) or 1
@@ -350,6 +414,8 @@ def stats_svg_response(
     accent: Optional[str] = None,
     theme: str = "dark",
     title: Optional[str] = None,
+    exclude: Optional[Iterable[str]] = None,
+    extras: Optional[Mapping[str, Any]] = None,
     status_code: int = 200,
 ) -> Response:
     svg = render_stats_svg(
@@ -359,6 +425,8 @@ def stats_svg_response(
         accent=accent,
         theme=theme,
         title=title,
+        exclude=exclude,
+        extras=extras,
     )
     return Response(
         content=svg,
