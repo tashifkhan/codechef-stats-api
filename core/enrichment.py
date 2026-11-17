@@ -4,7 +4,7 @@ import hashlib
 import time
 from collections import Counter
 from core.cache import get_json, get_many, redis_enabled, set_json
-from core.jobs import INLINE_BUDGET, advance_inline, enqueue
+from core.jobs import INLINE_BUDGET, advance_inline, enqueue, job_id
 from core.runtime import remaining, state
 
 
@@ -15,6 +15,9 @@ def tag_key(slug):
     return 'topics:v2:item:' + hashlib.sha256(slug.encode()).hexdigest()
 
 FRESH_SECONDS = 3600
+# Tag lookups per refresh slice. They run concurrently, so a slice costs about
+# one upstream round trip and the same few store calls whatever the size.
+TAG_BATCH = 10
 
 
 async def read_topics(username, handler=None):
@@ -34,6 +37,11 @@ async def read_topics(username, handler=None):
     stale = bool(cached and time.time() - cached.get('updatedAt', 0) > FRESH_SECONDS)
     queued = await enqueue('topics', username)
     status = 'stale' if stale else 'partial' if cached else 'pending' if queued or inline else 'unavailable'
+    discovered = None
+    if cached is None and inline:
+        progress = await get_json('refresh:v1:state:' + job_id('topics', username))
+        if isinstance(progress, dict):
+            discovered = len(progress.get('ids') or [])
     current = state.get()
     if current:
         # Marks the response no-store and adds X-Data-State. Complete, fresh
@@ -43,6 +51,7 @@ async def read_topics(username, handler=None):
             'covered': cached.get('covered', 0) if cached else 0,
             'total': cached.get('total') if cached else None,
             'refreshQueued': queued,
+            **({'discovered': discovered} if discovered is not None else {}),
         }
     return cached.get('topics', []) if cached else []
 
@@ -57,7 +66,7 @@ def _fresh(cached):
                 and time.time() - cached.get('updatedAt', 0) <= FRESH_SECONDS)
 
 async def refresh_topics(job, discover, fetch_tags):
-    """One discovery page or at most five metadata reads per invocation."""
+    """One discovery page or at most TAG_BATCH metadata reads per invocation."""
     data = job.data
     # A finished job can be enqueued after the freshness window.
     if data.get('published'):
@@ -73,7 +82,7 @@ async def refresh_topics(job, discover, fetch_tags):
     ids = data.get('ids', [])
     offset = int(data.get('offset', 0))
     counts = Counter(data.get('counts', {}))
-    batch = ids[offset:offset+5]
+    batch = ids[offset:offset+TAG_BATCH]
     cached = await get_many([tag_key(slug) for slug in batch])
 
     async def load(slug, tags):
