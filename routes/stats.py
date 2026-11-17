@@ -6,7 +6,6 @@ from services import canonical_mapper
 from services.profile import fetch_codechef_profile
 from services.stats_svg import parse_exclude_list, stats_svg_response
 
-
 router = APIRouter(tags=["Canonical"], dependencies=[Depends(enforce_rate_limit)])
 
 

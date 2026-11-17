@@ -1,5 +1,7 @@
 from typing import Any
+
 from pydantic import BaseModel, Field
+
 
 class CodeChefProfileResponse(BaseModel):
     success: bool = True
@@ -17,6 +19,7 @@ class CodeChefProfileResponse(BaseModel):
     heatMap: list[dict[str, Any]] = Field(default_factory=list)
     ratingData: list[Any] = Field(default_factory=list)
 
+
 class CodeChefProfileInfo(BaseModel):
     profile: str | None = None
     name: str | None = None
@@ -28,6 +31,7 @@ class CodeChefProfileInfo(BaseModel):
     countryRank: int | None = None
     stars: str = "unrated"
     totalSolved: int | None = None
+
 
 class CodeChefProfileInfoResponse(BaseModel):
     success: bool = True

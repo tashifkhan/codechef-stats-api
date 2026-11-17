@@ -207,12 +207,12 @@ def summary_from(card: Card) -> Summary:
     )
 
 
-async def card_from(profile: CodeChefProfileResponse, handle: str) -> Card:
+async def card_from(profile: CodeChefProfileResponse, handle: str, include_topics: bool = True) -> Card:
     contests = contests_from(profile)
     return Card(
         username=handle,
         profile=profile_from(profile, handle),
-        stats=await stats_from(profile, handle),
+        stats=await stats_from(profile, handle) if include_topics else Stats(totalSolved=profile.totalSolved or 0),
         contests=contests,
         rating=rating_from(profile, contests),
         heatmap=heatmap_from(profile),

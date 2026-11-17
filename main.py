@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
 from core.middleware import CacheRateLimitMiddleware
+from core.runtime import RequestBudgetMiddleware
 from routes.badges import router as badges_router
 from routes.contests import router as contests_router
 from routes.docs import router as docs_router
@@ -21,6 +22,11 @@ app = FastAPI(
     description="FastAPI REST API for CodeChef profile data.",
 )
 
+app.add_middleware(CacheRateLimitMiddleware, platform="codechef")
+# Starlette runs the last-added middleware first: CORS wraps the budget, so a
+# 504 from the deadline still carries CORS headers, and the budget wraps the
+# cache and rate-limit store calls.
+app.add_middleware(RequestBudgetMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, you might want to restrict this to your frontend domain
@@ -28,7 +34,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(CacheRateLimitMiddleware, platform="codechef")
 
 app.include_router(docs_router)
 app.include_router(profile_router)

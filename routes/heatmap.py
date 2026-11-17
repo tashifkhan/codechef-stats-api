@@ -6,7 +6,6 @@ from services import canonical_mapper
 from services.heatmap_window import window_heatmap
 from services.profile import fetch_codechef_profile
 
-
 router = APIRouter(tags=["Canonical"], dependencies=[Depends(enforce_rate_limit)])
 
 
