@@ -1,10 +1,11 @@
 """Cache-only topic reads and bounded, checkpointed metadata refreshes."""
+import asyncio
 import hashlib
 import time
 from collections import Counter
-from core.cache import get_json, get_many, set_json
-from core.jobs import enqueue
-from core.runtime import state
+from core.cache import get_json, get_many, redis_enabled, set_json
+from core.jobs import INLINE_BUDGET, advance_inline, enqueue
+from core.runtime import remaining, state
 
 
 def key(username):
@@ -16,17 +17,23 @@ def tag_key(slug):
 FRESH_SECONDS = 3600
 
 
-async def read_topics(username):
-    """Cached topic counts only. Never calls CodeChef from the request path."""
-    cached = await get_json(key(username))
-    if not isinstance(cached, dict):
-        cached = None
-    stale = bool(cached and time.time() - cached.get('updatedAt', 0) > FRESH_SECONDS)
-    complete = bool(cached and cached.get('complete'))
-    if complete and not stale:
+async def read_topics(username, handler=None):
+    """Cached topic counts. With a handler, first advance the user's refresh job.
+
+    The request spends at most INLINE_BUDGET seconds (and never the last 3s of
+    its budget) on refresh slices, so topics fill in across requests without a
+    scheduled worker. A complete, fresh snapshot returns with no upstream calls.
+    """
+    cached = await _snapshot(username)
+    inline = handler is not None and redis_enabled()
+    if not _fresh(cached) and inline:
+        await advance_inline('topics', username, handler, min(INLINE_BUDGET, remaining() - 3.0))
+        cached = await _snapshot(username)
+    if _fresh(cached):
         return cached.get('topics', [])
+    stale = bool(cached and time.time() - cached.get('updatedAt', 0) > FRESH_SECONDS)
     queued = await enqueue('topics', username)
-    status = 'stale' if stale else 'partial' if cached else 'pending' if queued else 'unavailable'
+    status = 'stale' if stale else 'partial' if cached else 'pending' if queued or inline else 'unavailable'
     current = state.get()
     if current:
         # Marks the response no-store and adds X-Data-State. Complete, fresh
@@ -39,6 +46,15 @@ async def read_topics(username):
         }
     return cached.get('topics', []) if cached else []
 
+
+async def _snapshot(username):
+    cached = await get_json(key(username))
+    return cached if isinstance(cached, dict) else None
+
+
+def _fresh(cached):
+    return bool(cached and cached.get('complete')
+                and time.time() - cached.get('updatedAt', 0) <= FRESH_SECONDS)
 
 async def refresh_topics(job, discover, fetch_tags):
     """One discovery page or at most five metadata reads per invocation."""
@@ -59,12 +75,18 @@ async def refresh_topics(job, discover, fetch_tags):
     counts = Counter(data.get('counts', {}))
     batch = ids[offset:offset+5]
     cached = await get_many([tag_key(slug) for slug in batch])
-    for slug, tags in zip(batch, cached):
-        if tags is None:
-            tags = await fetch_tags(slug)  # Failure raises; never cache empty on failure.
-            if not isinstance(tags, list): raise RuntimeError('Invalid tag metadata')
-            if not await set_json(tag_key(slug), tags, 604800):
-                raise RuntimeError('Tag metadata could not be stored')
+
+    async def load(slug, tags):
+        if tags is not None:
+            return tags
+        tags = await fetch_tags(slug)  # Failure raises; never cache empty on failure.
+        if not isinstance(tags, list): raise RuntimeError('Invalid tag metadata')
+        if not await set_json(tag_key(slug), tags, 604800):
+            raise RuntimeError('Tag metadata could not be stored')
+        return tags
+
+    # One slice is a handful of independent lookups, so run them together.
+    for tags in await asyncio.gather(*(load(slug, tags) for slug, tags in zip(batch, cached))):
         counts.update(set(tags))
     data['offset'], data['counts'] = offset+len(batch), dict(counts)
     complete = data['offset'] >= len(ids)
@@ -72,7 +94,11 @@ async def refresh_topics(job, discover, fetch_tags):
                 'covered':data['offset'], 'total':len(ids), 'complete':complete, 'updatedAt':time.time()}
     # Save the checkpoint before publishing. Replaying a slice remains idempotent.
     await job.save()
-    if not await set_json(key(job.payload['subject']), snapshot, 604800):
+    previous = None if complete else await get_json(key(job.payload['subject']))
+    # A stale refresh restarts from zero. Keep serving the last complete
+    # snapshot until the rebuild finishes instead of publishing partial counts.
+    keep_previous = isinstance(previous, dict) and previous.get('complete')
+    if not keep_previous and not await set_json(key(job.payload['subject']), snapshot, 604800):
         raise RuntimeError('Topic snapshot could not be stored')
     data['published'] = complete
     await job.save()

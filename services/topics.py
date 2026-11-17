@@ -93,8 +93,10 @@ async def _fetch_problem_tags(code: str) -> List[str]:
 
 
 async def build_topic_analysis(handle: str) -> List[TopicCount]:
-    """Cached topics only. services/refresh.py fills the cache out of band."""
-    return [TopicCount(**row) for row in await read_topics(handle)]
+    """Cached topics, advanced by a bounded inline refresh slice when incomplete."""
+    from services.refresh import handle as refresh_handler
+
+    return [TopicCount(**row) for row in await read_topics(handle, refresh_handler)]
 
 
 __all__ = ["build_topic_analysis"]

@@ -84,6 +84,59 @@ async def run_once(handler):
                   owner, 'done' if done else 'retry', identifier, time.time()+delay)
     return True
 
+
+RELEASE_LEASE = "if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('DEL',KEYS[1]) end return 0"
+# Seconds a public request may spend advancing its own refresh job.
+INLINE_BUDGET = float(os.getenv('REFRESH_INLINE_BUDGET_SECONDS', '2.5'))
+
+async def advance_inline(kind, subject, handler, budget):
+    """Run refresh slices inside a request for at most `budget` seconds.
+
+    Takes the same lease and checkpoint the runner uses, so a scheduled worker and
+    concurrent requests never work one job at the same time. Progress is
+    checkpointed per slice, so a slice cut off by the budget only loses itself.
+    Returns True once the job has finished. Needs only Redis, not
+    REFRESH_WORKER_ENABLED, so topics fill in without an external scheduler.
+    """
+    if budget < 0.25 or not redis_enabled():
+        return False
+    identifier = job_id(kind, subject)
+    owner = uuid.uuid4().hex
+    lease = 'refresh:v1:lease:' + identifier
+    if not await command('set', lease, owner, ex=30, nx=True):
+        return False
+    done = False
+    try:
+        job = Job(identifier, owner, {'kind': kind, 'subject': subject},
+                  await get_json('refresh:v1:state:' + identifier))
+        # Back off after upstream refusals so throttled requests stay fast and
+        # stop adding load to the platform.
+        if float(job.data.get('retryAt', 0)) > time.time():
+            return False
+        deadline = time.monotonic() + budget
+        try:
+            while not done:
+                left = deadline - time.monotonic()
+                if left < 0.25:
+                    break
+                done = bool(await asyncio.wait_for(handler(job), left))
+            if job.data.pop('attempts', None) is not None:
+                job.data.pop('retryAt', None)
+                await job.save()
+        except asyncio.TimeoutError:
+            # The budget cut a slice short. Completed slices are already saved.
+            pass
+        except Exception:
+            attempts = min(int(job.data.get('attempts', 0)) + 1, 10)
+            job.data['attempts'] = attempts
+            job.data['retryAt'] = time.time() + min(3600, 5 * 2 ** (attempts - 1))
+            await job.save()
+    except Exception:
+        done = False
+    finally:
+        await command('eval', RELEASE_LEASE, 1, lease, owner)
+    return done
+
 def main(handler, kind='topics'):
     parser = argparse.ArgumentParser(description='Run one bounded durable refresh slice. Schedule externally, no production schedule is enabled by this command.')
     parser.add_argument('--username', help='Enqueue a username before processing one slice')
