@@ -5,7 +5,6 @@ from models.canonical import make_envelope
 from services import canonical_mapper
 from services.profile import fetch_codechef_profile
 
-
 router = APIRouter(tags=["Canonical"], dependencies=[Depends(enforce_rate_limit)])
 
 

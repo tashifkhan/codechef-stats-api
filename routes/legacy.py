@@ -8,7 +8,6 @@ from services.heatmap_window import window_heatmap
 from services.profile import fetch_codechef_profile, fetch_profile_info
 from services.rating import fetch_rating_history
 
-
 router = APIRouter(tags=["Legacy"], dependencies=[Depends(enforce_rate_limit)])
 
 
@@ -16,7 +15,9 @@ router = APIRouter(tags=["Legacy"], dependencies=[Depends(enforce_rate_limit)])
 async def legacy_profile(handle: str):
     legacy = await fetch_profile_info(handle)
     profile = await fetch_codechef_profile(handle)
-    return make_envelope(handle, canonical_mapper.profile_from(profile, handle), legacy=legacy)
+    return make_envelope(
+        handle, canonical_mapper.profile_from(profile, handle), legacy=legacy
+    )
 
 
 @router.get("/heatmap/{handle}", deprecated=True)
