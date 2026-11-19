@@ -37,7 +37,8 @@ def _handle_from_path(path: str) -> str | None:
 
 
 def _query_string(request: Request) -> str:
-    pairs = sorted(request.query_params.multi_items())
+    # ?client= only names the caller for analytics, so it must not split the cache.
+    pairs = sorted((k, v) for k, v in request.query_params.multi_items() if k != "client")
     return "&".join(f"{key}={value}" for key, value in pairs)
 
 
