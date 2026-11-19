@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
+from core.analytics import AnalyticsMiddleware
 from core.middleware import CacheRateLimitMiddleware
 from core.runtime import RequestBudgetMiddleware
 from routes.badges import router as badges_router
@@ -27,6 +28,8 @@ app.add_middleware(CacheRateLimitMiddleware, platform="codechef")
 # 504 from the deadline still carries CORS headers, and the budget wraps the
 # cache and rate-limit store calls.
 app.add_middleware(RequestBudgetMiddleware)
+# Outside the cache so cache hits and 429s are counted; inside CORS.
+app.add_middleware(AnalyticsMiddleware, api="codechef")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, you might want to restrict this to your frontend domain
