@@ -1,6 +1,7 @@
 """Render canonical Stats as an embeddable SVG card (README-friendly).
 
-Cached aggressively: responses set ``Cache-Control: public, max-age=86400``.
+The store keeps a card for 24h, while browsers get five minutes and the CDN an
+hour. ``X-Store-TTL`` carries the longer store window past the edge rewrite.
 """
 
 from __future__ import annotations
@@ -11,8 +12,15 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from fastapi.responses import Response
 
+from core.cache_control import _no_store
+
 SVG_CACHE_SECONDS = 86400
-SVG_CACHE_CONTROL = f"public, max-age={SVG_CACHE_SECONDS}, s-maxage={SVG_CACHE_SECONDS}"
+SVG_BROWSER_MAX_AGE_SECONDS = 300
+SVG_CDN_MAX_AGE_SECONDS = 3600
+SVG_CACHE_CONTROL = (
+    f"public, max-age={SVG_BROWSER_MAX_AGE_SECONDS}, "
+    f"s-maxage={SVG_CDN_MAX_AGE_SECONDS}"
+)
 
 # Platform accents mirror routes/docs.py
 PLATFORM_ACCENTS: Dict[str, str] = {
@@ -434,6 +442,8 @@ def stats_svg_response(
         status_code=status_code,
         headers={
             "Cache-Control": SVG_CACHE_CONTROL,
+            "CDN-Cache-Control": SVG_CACHE_CONTROL,
+            "X-Store-TTL": str(SVG_CACHE_SECONDS),
             "Content-Type": "image/svg+xml; charset=utf-8",
         },
     )
@@ -459,8 +469,5 @@ def error_svg_response(
         content=svg,
         media_type="image/svg+xml",
         status_code=status_code,
-        headers={
-            "Cache-Control": "public, max-age=300",
-            "Content-Type": "image/svg+xml; charset=utf-8",
-        },
+        headers=_no_store({"Content-Type": "image/svg+xml; charset=utf-8"}),
     )

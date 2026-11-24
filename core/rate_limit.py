@@ -11,12 +11,13 @@ RATE_SCRIPT = """
 local backoff = redis.call('TTL', KEYS[1])
 if backoff > 0 then return {0, backoff, 0} end
 local count = redis.call('INCR', KEYS[2])
-if count == 1 or redis.call('TTL', KEYS[2]) < 0 then
- redis.call('EXPIRE', KEYS[2], ARGV[2])
-end
 local ttl = redis.call('TTL', KEYS[2])
+if count == 1 or ttl < 0 then
+ redis.call('EXPIRE', KEYS[2], ARGV[2])
+ ttl = tonumber(ARGV[2])
+end
 if count <= tonumber(ARGV[1]) then
- redis.call('DEL', KEYS[3])
+ if count == 1 then redis.call('DEL', KEYS[3]) end
  return {1, ttl, tonumber(ARGV[1])-count}
 end
 local violations = redis.call('INCR', KEYS[3])
