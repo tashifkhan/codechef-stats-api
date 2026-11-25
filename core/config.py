@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     cache_max_entries: int = 256
     rate_limit_requests: int = 60
     rate_limit_window_seconds: int = 60
+    oracle_redis_url: str | None = os.getenv("ORACLE_REDIS_URL")
+    oracle_redis_ca_cert: str | None = os.getenv("ORACLE_REDIS_CA_CERT")
     redis_url: str | None = os.getenv("REDIS_URL")
     upstash_rest_url: str | None = os.getenv("UPSTASH_REDIS_REST_URL")
     upstash_rest_token: str | None = os.getenv("UPSTASH_REDIS_REST_TOKEN")
