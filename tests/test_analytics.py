@@ -126,3 +126,43 @@ def test_backend_failure_never_breaks_requests(monkeypatch):
     app, _ = _app(monkeypatch, fail=True)
     with TestClient(app) as client:
         assert client.get("/alice/heatmap").status_code == 200
+
+
+def test_wait_mode_sends_before_returning(monkeypatch):
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://otlp.example")
+    sent = []
+
+    async def fake_send_now(self, payload):
+        sent.append(payload)
+
+    monkeypatch.setattr(AnalyticsMiddleware, "_send_now", fake_send_now)
+    app = FastAPI()
+    app.add_middleware(AnalyticsMiddleware, api="leetcode", wait=True)
+
+    @app.get("/{user}/heatmap")
+    def heatmap(user: str):
+        return {"ok": True}
+
+    with TestClient(app) as client:
+        assert client.get("/alice/heatmap").status_code == 200
+        assert len(sent) == 1  # already sent, not left to a background task
+
+
+def test_wait_mode_backend_failure_never_breaks_requests(monkeypatch):
+    import httpx
+
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://otlp.example")
+
+    async def boom(self, *args, **kwargs):
+        raise httpx.TimeoutException("backend down")
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", boom)
+    app = FastAPI()
+    app.add_middleware(AnalyticsMiddleware, api="leetcode", wait=True)
+
+    @app.get("/{user}/heatmap")
+    def heatmap(user: str):
+        return {"ok": True}
+
+    with TestClient(app) as client:
+        assert client.get("/alice/heatmap").status_code == 200

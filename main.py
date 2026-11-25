@@ -29,7 +29,7 @@ app.add_middleware(CacheRateLimitMiddleware, platform="codechef")
 # cache and rate-limit store calls.
 app.add_middleware(RequestBudgetMiddleware)
 # Outside the cache so cache hits and 429s are counted; inside CORS.
-app.add_middleware(AnalyticsMiddleware, api="codechef")
+app.add_middleware(AnalyticsMiddleware, api="codechef", wait=True)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, you might want to restrict this to your frontend domain
